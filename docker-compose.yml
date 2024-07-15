@@ -1,16 +1,30 @@
 services:
   config-server:
-    build:
-      context: ../SmartHomeHub-ConfigService/config-server
+    image: smarthomehub/config-server:0.0.1
     container_name: config-server
     environment:
       SERVER_PORT: 8071
     ports:
       - 8071:8071
+      
+  gateway-server:
+    image: smarthomehub/gateway-server:0.0.1-SNAPSHOT
+    container_name: gateway-server
+    environment:
+      SERVER_PORT: 8072
+    ports:
+      - 8072:8072
+      
+  eureka-server:
+    image: smarthomehub/eureka-server:0.0.1-SNAPSHOT
+    container_name: eureka-server
+    environment:
+      SERVER_PORT: 8073
+    ports:
+      - 8073:8073
 
   musicservice:
-    build:
-      context: ../SmartHomeHub-MusicService/music-service
+    image: smarthomehub/music-service:0.0.1-SNAPSHOT
     container_name: music-service
     restart: on-failure
     depends_on:
@@ -25,8 +39,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: password
 
   sprinkler-service:
-    build:
-      context: ../SmartHomeHub-SprinklerService/SprinklerService
+    image: smarthomehub/sprinkler-service:0.0.1
     container_name: sprinkler-service
     environment:
       SPRING_PROFILES_ACTIVE: "dev"
@@ -39,14 +52,14 @@ services:
       - 8080:8080
 
   notificationservice:
-    build:
-      context: ../SmartHomeHub-NotificationService/NotificationService
+    image: smarthomehub/notification-service:0.0.1-SNAPSHOT
     ports:
       - "8082:8082"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://notificationdb:5432/postgres
       SPRING_PROFILES_ACTIVE: prod
     depends_on:
+      - config-server
       - notificationdb
 
 
