@@ -1,5 +1,5 @@
 services:
-  config-server:
+  configserver:
     image: smarthomehub/config-server:0.0.1
     container_name: config-server
     environment:
@@ -7,7 +7,7 @@ services:
     ports:
       - 8071:8071
       
-  gateway-server:
+  gatewayserver:
     image: smarthomehub/gateway-server:0.0.1-SNAPSHOT
     container_name: gateway-server
     environment:
@@ -15,7 +15,7 @@ services:
     ports:
       - 8072:8072
       
-  eureka-server:
+  eurekaserver:
     image: smarthomehub/eureka-server:0.0.1-SNAPSHOT
     container_name: eureka-server
     environment:
@@ -38,7 +38,7 @@ services:
       SPRING_DATASOURCE_USERNAME: devuser
       SPRING_DATASOURCE_PASSWORD: password
 
-  sprinkler-service:
+  sprinklerservice:
     image: smarthomehub/sprinkler-service:0.0.1
     container_name: sprinkler-service
     environment:
