@@ -1,0 +1,117 @@
+services:
+  config-server:
+    build:
+      context: ../SmartHomeHub-ConfigService/config-server
+    container_name: config-server
+    environment:
+      SERVER_PORT: 8071
+    ports:
+      - 8071:8071
+
+  musicservice:
+    build:
+      context: ../SmartHomeHub-MusicService/music-service
+    container_name: music-service
+    restart: on-failure
+    depends_on:
+      - postgres-db-dev
+      - postgres-db-prod
+    ports:
+      - 8081:8081
+    environment:
+      SPRING_ACTIVE_PROFILE: "dev"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://musicservicedb-dev:5432/db-dev
+      SPRING_DATASOURCE_USERNAME: devuser
+      SPRING_DATASOURCE_PASSWORD: password
+
+  sprinkler-service:
+    build:
+      context: ../SmartHomeHub-SprinklerService/SprinklerService
+    container_name: sprinkler-service
+    environment:
+      SPRING_PROFILES_ACTIVE: "dev"
+    restart: on-failure
+    depends_on:
+      - config-server
+      - sprinkler-db-dev
+      - sprinkler-db-prod
+    ports:
+      - 8080:8080
+
+  notificationservice:
+    build:
+      context: ../SmartHomeHub-NotificationService/NotificationService
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://notificationdb:5432/postgres
+      SPRING_PROFILES_ACTIVE: prod
+    depends_on:
+      - notificationdb
+
+
+  sprinkler-db-dev:
+    image: postgres
+    container_name: sprinkler-db-dev
+    restart: always
+    environment:
+      POSTGRES_DB: sprinkler_dev
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: postgrespassword
+    volumes:
+      - ./src/main/resources/init.sql:/docker-entrypoint-initdb.d/1-init.sql
+      - ./src/main/resources/data.sql:/docker-entrypoint-initdb.d/2-data.sql
+    ports:
+      - 5432:5432
+
+  sprinkler-db-prod:
+    image: postgres
+    container_name: sprinkler-db-prod
+    restart: always
+    environment:
+      POSTGRES_DB: sprinkler_prod
+      POSTGRES_USER: produser
+      POSTGRES_PASSWORD: postgrespassword
+    volumes:
+      - ./src/main/resources/init.sql:/docker-entrypoint-initdb.d/1-init.sql
+      - ./src/main/resources/data.sql:/docker-entrypoint-initdb.d/2-data.sql
+    ports:
+      - 5433:5432
+
+  notificationdb:
+    image: postgres:latest
+    container_name: notificationdb
+    environment:
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    ports:
+      - 5434:5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: always
+
+  postgres-db-dev:
+    image: postgres:latest
+    container_name: musicservicedb-dev
+    environment:
+      POSTGRES_DB: db-dev
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: password
+      POSTGRES_ROOT_PASSWORD: password
+    ports:
+      - 5435:5432
+  postgres-db-prod:
+    image: postgres:latest
+    container_name: musicservicedb-prod
+    environment:
+      POSTGRES_DB: db
+      POSTGRES_USER: produser
+      POSTGRES_PASSWORD: password
+      POSTGRES_ROOT_PASSWORD: password
+    ports:
+      - 5436:5432
+volumes:
+  pgdata:
+  musicservice-data:
