@@ -1,6 +1,6 @@
 spring:
   application:
-    name: SprinklerService
+    name: sprinkler-service
   profiles:
     active: dev
 
