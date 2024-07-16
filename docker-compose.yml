@@ -13,6 +13,18 @@ services:
       timeout: 3s
       retries: 10
       start_period: 5s
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0.1
+    container_name: keycloak
+    restart: always
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    command:
+      - start-dev
+    ports:
+      - 8080:8080
       
   gatewayserver:
     image: smarthomehub/gateway-server:0.0.1-SNAPSHOT
@@ -79,7 +91,7 @@ services:
       sprinkler-db-prod:
         condition: service_started
     ports:
-      - 8080:8080
+      - 8083:8083
 
   notificationservice:
     image: smarthomehub/notification-service:0.0.1-SNAPSHOT
