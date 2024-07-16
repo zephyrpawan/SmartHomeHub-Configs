@@ -2,34 +2,52 @@ services:
   configserver:
     image: smarthomehub/config-server:0.0.1
     container_name: config-server
+    restart: always
     environment:
       SERVER_PORT: 8071
     ports:
       - 8071:8071
+    healthcheck:
+      test: "curl --fail --silent localhost:8071/actuator/health | grep UP || exit 1"
+      interval: 2s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
       
   gatewayserver:
     image: smarthomehub/gateway-server:0.0.1-SNAPSHOT
     container_name: gateway-server
+    restart: always
     environment:
       SERVER_PORT: 8072
+    depends_on:
+      eurekaserver:
+        condition: service_healthy
     ports:
       - 8072:8072
       
   eurekaserver:
     image: smarthomehub/eureka-server:0.0.1-SNAPSHOT
     container_name: eureka-server
+    restart: always
     environment:
       SERVER_PORT: 8073
+    depends_on:
+      configserver:
+        condition: service_healthy
     ports:
       - 8073:8073
+    healthcheck:
+      test: "curl --fail --silent localhost:8073/actuator/health | grep UP || exit 1"
+      interval: 2s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
 
   musicservice:
     image: smarthomehub/music-service:0.0.1-SNAPSHOT
     container_name: music-service
-    restart: on-failure
-    depends_on:
-      - postgres-db-dev
-      - postgres-db-prod
+    restart: always
     ports:
       - 8081:8081
     environment:
@@ -37,30 +55,48 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://musicservicedb-dev:5432/db-dev
       SPRING_DATASOURCE_USERNAME: devuser
       SPRING_DATASOURCE_PASSWORD: password
+    depends_on:
+      eurekaserver:
+        condition: service_healthy
+      postgres-db-dev:
+        condition: service_started
+      postgres-db-prod:
+        condition: service_started
 
   sprinklerservice:
     image: smarthomehub/sprinkler-service:0.0.1
     container_name: sprinkler-service
+    restart: always
     environment:
       SPRING_PROFILES_ACTIVE: "dev"
-    restart: on-failure
     depends_on:
-      - config-server
-      - sprinkler-db-dev
-      - sprinkler-db-prod
+      configserver:
+        condition: service_healthy
+      eurekaserver:
+        condition: service_healthy
+      sprinkler-db-dev:
+        condition: service_started
+      sprinkler-db-prod:
+        condition: service_started
     ports:
       - 8080:8080
 
   notificationservice:
     image: smarthomehub/notification-service:0.0.1-SNAPSHOT
+    container_name: notification-service
+    restart: always
     ports:
       - "8082:8082"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://notificationdb:5432/postgres
       SPRING_PROFILES_ACTIVE: prod
     depends_on:
-      - config-server
-      - notificationdb
+      configserver:
+        condition: service_healthy
+      eurekaserver:
+        condition: service_healthy
+      notificationdb:
+        condition: service_started
 
 
   sprinkler-db-dev:
@@ -94,6 +130,7 @@ services:
   notificationdb:
     image: postgres:latest
     container_name: notificationdb
+    restart: always
     environment:
       - POSTGRES_PASSWORD=password
       - POSTGRES_USER=postgres
@@ -103,11 +140,11 @@ services:
       - 5434:5432
     volumes:
       - pgdata:/var/lib/postgresql/data
-    restart: always
 
   postgres-db-dev:
     image: postgres:latest
     container_name: musicservicedb-dev
+    restart: always
     environment:
       POSTGRES_DB: db-dev
       POSTGRES_USER: devuser
@@ -115,9 +152,11 @@ services:
       POSTGRES_ROOT_PASSWORD: password
     ports:
       - 5435:5432
+
   postgres-db-prod:
     image: postgres:latest
     container_name: musicservicedb-prod
+    restart: always
     environment:
       POSTGRES_DB: db
       POSTGRES_USER: produser
@@ -125,6 +164,7 @@ services:
       POSTGRES_ROOT_PASSWORD: password
     ports:
       - 5436:5432
+
 volumes:
   pgdata:
   musicservice-data:
