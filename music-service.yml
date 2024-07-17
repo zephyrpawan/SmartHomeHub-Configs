@@ -1,0 +1,39 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: music-service
+  profiles:
+    active: dev
+  sql:
+    init:
+      mode: always
+  config:
+    import: "optional:configserver:http://configserver:8071"
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: create
+      naming-strategy: org.hibernate.cfg.ImprovedNamingStrategy
+
+management:
+  endpoint:
+    health:
+      circuitbreakers:
+        enabled: true
+      show-details: always
+  endpoints:
+    web:
+      exposure:
+        include:
+          health
+
+eureka:
+  instance:
+    preferIpAddress: true
+  client:
+    registerWithEureka: true
+    fetchRegistry: true
+    serviceUrl:
+      defaultZone: http://eurekaserver:8073/eureka/
