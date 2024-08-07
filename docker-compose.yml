@@ -73,8 +73,6 @@ services:
         condition: service_healthy
       eurekaserver:
         condition: service_healthy
-      kafkaserver:
-        condition: service_healthy
       postgres-db-dev:
         condition: service_started
       postgres-db-prod:
@@ -90,8 +88,6 @@ services:
       configserver:
         condition: service_healthy
       eurekaserver:
-        condition: service_healthy
-      kafkaserver:
         condition: service_healthy
       sprinkler-db-dev:
         condition: service_started
@@ -114,8 +110,6 @@ services:
         condition: service_healthy
       eurekaserver:
         condition: service_healthy
-      kafkaserver:
-        condition: service_healthy
       notificationdb:
         condition: service_started
 
@@ -123,10 +117,6 @@ services:
     image: wurstmeister/zookeeper:latest
     ports:
       - 2181:2181
-    networks:
-      backend:
-        aliases:
-          - "zookeeper"
 
   kafkaserver:
     image: wurstmeister/kafka:latest
@@ -137,23 +127,16 @@ services:
       - KAFKA_ADVERTISED_PORT=9092
       - KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181
       - KAFKA_CREATE_TOPICS=dresses:1:1,ratings:1:1
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafkaserver:9092
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
     depends_on:
       - zookeeper
-    networks:
-      backend:
-        aliases:
-          - "kafka"
 
   redisserver:
     image: redis:alpine
     ports:
       - 6379:6379
-    networks:
-      backend:
-        aliases:
-          - "redis"
 
   sprinkler-db-dev:
     image: postgres
