@@ -69,7 +69,11 @@ services:
       SPRING_DATASOURCE_USERNAME: devuser
       SPRING_DATASOURCE_PASSWORD: password
     depends_on:
+      configserver:
+        condition: service_healthy
       eurekaserver:
+        condition: service_healthy
+      kafkaserver:
         condition: service_healthy
       postgres-db-dev:
         condition: service_started
@@ -86,6 +90,8 @@ services:
       configserver:
         condition: service_healthy
       eurekaserver:
+        condition: service_healthy
+      kafkaserver:
         condition: service_healthy
       sprinkler-db-dev:
         condition: service_started
@@ -107,6 +113,8 @@ services:
       configserver:
         condition: service_healthy
       eurekaserver:
+        condition: service_healthy
+      kafkaserver:
         condition: service_healthy
       notificationdb:
         condition: service_started
