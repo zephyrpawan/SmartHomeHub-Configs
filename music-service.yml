@@ -6,6 +6,8 @@ spring:
     name: music-service
   profiles:
     active: dev
+  kafka:
+    bootstrap-servers: localhost:9192
   sql:
     init:
       mode: always
