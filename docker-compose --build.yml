@@ -1,0 +1,342 @@
+services:
+  setup:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
+    volumes:
+      - certs:/usr/share/elasticsearch/config/certs
+    user: "0"
+    command: >
+      bash -c '
+        if [ x${ELASTIC_PASSWORD} == x ]; then
+          echo "Set the ELASTIC_PASSWORD environment variable in the .env file";
+          exit 1;
+        elif [ x${KIBANA_PASSWORD} == x ]; then
+          echo "Set the KIBANA_PASSWORD environment variable in the .env file";
+          exit 1;
+        fi;
+        if [ ! -f config/certs/ca.zip ]; then
+          echo "Creating CA";
+          bin/elasticsearch-certutil ca --silent --pem -out config/certs/ca.zip;
+          unzip config/certs/ca.zip -d config/certs;
+        fi;
+        if [ ! -f config/certs/certs.zip ]; then
+          echo "Creating certs";
+          echo -ne \
+          "instances:\n"\
+          "  - name: elasticsearch\n"\
+          "    dns:\n"\
+          "      - elasticsearch\n"\
+          "      - localhost\n"\
+          "    ip:\n"\
+          "      - 127.0.0.1\n"\
+          "  - name: kibana\n"\
+          "    dns:\n"\
+          "      - kibana\n"\
+          "      - localhost\n"\
+          "    ip:\n"\
+          "      - 127.0.0.1\n"\
+          > config/certs/instances.yml;
+          bin/elasticsearch-certutil cert --silent --pem -out config/certs/certs.zip --in config/certs/instances.yml --ca-cert config/certs/ca/ca.crt --ca-key config/certs/ca/ca.key;
+          unzip config/certs/certs.zip -d config/certs;
+        fi;
+        echo "Setting file permissions"
+        chown -R root:root config/certs;
+        find . -type d -exec chmod 750 \{\} \;;
+        find . -type f -exec chmod 640 \{\} \;;
+        echo "Waiting for Elasticsearch availability";
+        until curl -s --cacert config/certs/ca/ca.crt https://elasticsearch:9200 | grep -q "missing authentication credentials"; do sleep 30; done;
+        echo "Setting kibana_system password";
+        until curl -s -X POST --cacert config/certs/ca/ca.crt -u "elastic:${ELASTIC_PASSWORD}" -H "Content-Type: application/json" https://elasticsearch:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_PASSWORD}\"}" | grep -q "^{}"; do sleep 10; done;
+        echo "All done!";
+      '
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f config/certs/elasticsearch/elasticsearch.crt ]"]
+      interval: 1s
+      timeout: 5s
+      retries: 120
+######################################################
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
+    container_name: elasticsearch
+    environment:
+      - node.name=elasticsearch
+      - discovery.type=single-node
+      - cluster.name=docker-cluster
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=true
+      - xpack.security.http.ssl.key=certs/elasticsearch/elasticsearch.key
+      - xpack.security.http.ssl.certificate=certs/elasticsearch/elasticsearch.crt
+      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.key=certs/elasticsearch/elasticsearch.key
+      - xpack.security.transport.ssl.certificate=certs/elasticsearch/elasticsearch.crt
+      - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.verification_mode=certificate
+      - xpack.license.self_generated.type=basic
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - certs:/usr/share/elasticsearch/config/certs
+      - esdata1:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+######################################################
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.14.3
+    container_name: kibana
+    depends_on:
+      - elasticsearch
+    restart: on-failure
+    environment:
+      - SERVERNAME=kibana
+      - ELASTICSEARCH_HOSTS=https://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
+      - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=config/certs/ca/ca.crt
+    volumes:
+      - certs:/usr/share/kibana/config/certs
+      - kibanadata:/usr/share/kibana/data
+    ports:
+      - 5601:5601
+######################################################
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.14.3
+    labels:
+      co.elastic.logs/module: logstash
+    user: root
+    container_name: logstash
+    command: logstash -f /etc/logstash/conf.d/logstash.conf
+    volumes:
+      - certs:/usr/share/logstash/certs
+      - logstashdata:/usr/share/logstash/data
+      - ./config:/etc/logstash/conf.d
+    environment:
+      - xpack.monitoring.enabled=false
+      - xpack.monitoring.elasticsearch.hosts=https://elasticsearch:9200
+      - xpack.monitoring.elasticsearch.username=elastic
+      - xpack.monitoring.elasticsearch.password=${KIBANA_PASSWORD}
+      - xpack.monitoring.elasticsearch.ssl.certificateauthority=certs/ca/ca.crt
+    ports:
+      - 5000:5000
+######################################################
+  zipkin:
+    image: openzipkin/zipkin
+    container_name: zipkin
+    depends_on:
+      - elasticsearch
+    restart: on-failure
+    environment:
+      - STORAGE_TYPE=elasticsearch
+      - ES_HOSTS=https://elasticsearch:9200
+      - ES_USERNAME=elastic
+      - ES_PASSWORD=password
+      - ES_SSL_NO_VERIFY=true
+    ports:
+      - 9411:9411
+######################################################
+  config-server:
+    build:
+      context: ../SmartHomeHub-ConfigService/config-server
+    container_name: config-server
+    environment:
+      SERVER_PORT: 8071
+    ports:
+      - 8071:8071
+######################################################
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0.1
+    container_name: keycloak
+    restart: always
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    volumes:
+      - ./keycloak/imports/:/opt/keycloak/data/import
+    command: -v start-dev --import-realm
+    ports:
+      - 8080:8080
+######################################################
+  gatewayserver:
+    build:
+      context: ../SmartHomeHub-GatewayServer/gateway-server
+    container_name: gateway-server
+    restart: always
+    environment:
+      SERVER_PORT: 8072
+    depends_on:
+      - eurekaserver
+    ports:
+      - 8072:8072
+######################################################
+  eurekaserver:
+    build:
+      context: ../SmartHomeHub-EurekaServer/eureka-server
+    container_name: eureka-server
+    restart: always
+    environment:
+      SERVER_PORT: 8073
+    depends_on:
+      - config-server
+    ports:
+      - 8073:8073
+    healthcheck:
+      test: "curl --fail --silent localhost:8073/actuator/health | grep UP || exit 1"
+      interval: 2s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+######################################################
+  sprinkler-service:
+    build:
+      context: ../SmartHomeHub-SprinklerService/SprinklerService
+    container_name: sprinkler-service
+    environment:
+      SPRING_PROFILES_ACTIVE: "dev"
+    restart: on-failure
+    depends_on:
+      - config-server
+      - keycloak
+      - sprinkler-db-dev
+      - sprinkler-db-prod
+    ports:
+      - 8083:8083
+######################################################
+  notificationservice:
+    build:
+      context: ../SmartHomeHub-NotificationService/NotificationService
+    container_name: notification-service
+    restart: on-failure
+    ports:
+      - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://notificationdb:5432/postgres
+      SPRING_PROFILES_ACTIVE: prod
+    depends_on:
+      - config-server
+      - eurekaserver
+      - notificationdb
+######################################################
+  musicservice:
+    build:
+      context: ../SmartHomeHub-MusicService/music-service
+    container_name: music-service
+    restart: always
+    ports:
+      - 8081:8081
+    environment:
+      SPRING_ACTIVE_PROFILE: "dev"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://musicservicedb-dev:5432/db-dev
+      SPRING_DATASOURCE_USERNAME: devuser
+      SPRING_DATASOURCE_PASSWORD: password
+    depends_on:
+      - config-server
+      - eurekaserver
+      - postgres-db-dev
+      - postgres-db-prod
+######################################################
+  zookeeper:
+    image: wurstmeister/zookeeper
+    container_name: zookeeper
+    restart: always
+    ports:
+      - 2181:2181
+######################################################
+  kafka-server:
+    image: wurstmeister/kafka
+    restart: on-failure
+    container_name: kafka-server
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-server:9092
+      KAFKA_LISTENERS: INTERNAL://kafka-server:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    ports:
+      - 9092:9092
+######################################################
+  sprinkler-db-dev:
+    image: postgres
+    container_name: sprinkler-db-dev
+    restart: always
+    environment:
+      POSTGRES_DB: sprinkler_dev
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: postgrespassword
+    volumes:
+      - ./src/main/resources/init.sql:/docker-entrypoint-initdb.d/1-init.sql
+      - ./src/main/resources/data.sql:/docker-entrypoint-initdb.d/2-data.sql
+    ports:
+      - 5432:5432
+  sprinkler-db-prod:
+    image: postgres
+    container_name: sprinkler-db-prod
+    restart: always
+    environment:
+      POSTGRES_DB: sprinkler_prod
+      POSTGRES_USER: produser
+      POSTGRES_PASSWORD: postgrespassword
+    volumes:
+      - ./src/main/resources/init.sql:/docker-entrypoint-initdb.d/1-init.sql
+      - ./src/main/resources/data.sql:/docker-entrypoint-initdb.d/2-data.sql
+    ports:
+      - 5433:5432
+
+  notificationdb:
+    image: postgres:latest
+    container_name: notificationdb
+    restart: always
+    environment:
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    ports:
+      - 5434:5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  postgres-db-dev:
+    image: postgres:latest
+    container_name: musicservicedb-dev
+    restart: always
+    environment:
+      POSTGRES_DB: db-dev
+      POSTGRES_USER: devuser
+      POSTGRES_PASSWORD: password
+      POSTGRES_ROOT_PASSWORD: password
+    ports:
+      - 5435:5432
+
+  postgres-db-prod:
+    image: postgres:latest
+    container_name: musicservicedb-prod
+    restart: always
+    environment:
+      POSTGRES_DB: db
+      POSTGRES_USER: produser
+      POSTGRES_PASSWORD: password
+      POSTGRES_ROOT_PASSWORD: password
+    ports:
+      - 5436:5432
+######################################################
+volumes:
+  pgdata:
+  musicservice-data:
+  esdata1:
+    driver: local
+  certs:
+    driver: local
+  kibanadata:
+    driver: local
+  logstashdata:
+    driver: local
+######################################################
